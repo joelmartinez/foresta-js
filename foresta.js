@@ -62,15 +62,12 @@ function foresta(query) {
         this.visit(variable.init);
     };
     this.visitIdentifier = function (id) {
-        //if (id.name === this.query) this.results.push(id.parent);
-        console.log(id.name);
+        //console.log(id.name);
     };
     this.visitBinaryExpression = function (expression) {
         expression.left.parent = expression;
         expression.right.parent = expression;
-
         this.visit(expression.left);
-        //console.log(expression.operator);
         this.visit(expression.right);
     };
     this.visitLiteral = function (literal) {
@@ -102,6 +99,19 @@ function foresta(query) {
             e.parent = block;
             this.visit(e);
         }
+    };
+    this.visitAssignmentExpression = function(ex) {
+        this.visitBinaryExpression(ex);
+    };
+    this.visitMemberExpression = function(member) {
+        member.object.parent = member;
+        member.property.parent = member;
+        this.visit(member.object);
+        this.visit(member.property);
+    };
+    this.visitExpressionStatement = function(ex) {
+        ex.expression.parent = ex;
+        this.visit(ex.expression);
     };
     this.evaluateFilters = function(tgt) {
         var filterMatched = true;
@@ -148,6 +158,15 @@ function foresta(query) {
                 break;
             case "BlockStatement":
                 this.visitBlockStatement(tgt);
+                break;
+            case "AssignmentExpression":
+                this.visitAssignmentExpression(tgt);
+                break;
+            case "MemberExpression":
+                this.visitMemberExpression(tgt);
+                break;
+            case "ExpressionStatement":
+                this.visitExpressionStatement(tgt);
                 break;
         }
     }
