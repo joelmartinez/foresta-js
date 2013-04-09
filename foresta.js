@@ -76,6 +76,33 @@ function foresta(query) {
     this.visitLiteral = function (literal) {
         //console.log(literal.value);
     };
+    this.visitFunctionExpression = function (fx) {
+        if (fx.id != null) {
+            fx.id.parent = fx;
+            this.visit(fx.id);
+        }
+        for(var i = 0;i<fx.params.length;i++){
+            var param = fx.params[i];
+            param.parent = fx;
+            this.visit(param);
+        }
+        for(var i = 0;i<fx.defaults.length;i++){
+            var def = fx.defaults[i];
+            def.parent = fx;
+            this.visit(def);
+        }
+        fx.body.parent = fx;
+        this.visit(fx.body);
+        //generator
+        // expression
+    };
+    this.visitBlockStatement = function(block) {
+        for(var i=0;block.body.length;i++) {
+            var e = block.body[i];
+            e.parent = block;
+            this.visit(e);
+        }
+    };
     this.evaluateFilters = function(tgt) {
         var filterMatched = true;
         var context = tgt;
@@ -115,6 +142,12 @@ function foresta(query) {
                 break;
             case "Literal":
                 this.visitLiteral(tgt);
+                break;
+            case "FunctionExpression":
+                this.visitFunctionExpression(tgt);
+                break;
+            case "BlockStatement":
+                this.visitBlockStatement(tgt);
                 break;
         }
     }
