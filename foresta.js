@@ -62,7 +62,7 @@ function foresta(query) {
         this.visit(variable.init);
     };
     this.visitIdentifier = function (id) {
-        //
+        // console.log(id.name);
     };
     this.visitBinaryExpression = function (expression) {
         expression.left.parent = expression;
@@ -72,7 +72,7 @@ function foresta(query) {
         this.visit(expression.right);
     };
     this.visitLiteral = function (literal) {
-        //
+        // console.log(literal.value);
     };
     this.visitFunctionExpression = function (fx) {
         if (fx.id != null) {
@@ -126,6 +126,15 @@ function foresta(query) {
         prop.value.parent = prop;
         this.visit(prop.key);
         this.visit(prop.value);
+    };
+    this.visitNewExpression = function(ex) {
+        ex.callee.parent = ex;
+        this.visit(ex.callee);
+        for(var i=0;i<ex.arguments.length;i++) {
+            var arg = ex.arguments[i];
+            arg.parent = ex;
+            this.visit(arg);
+        }
     };
     this.evaluateFilters = function(tgt) {
         var filterMatched = true;
@@ -187,6 +196,9 @@ function foresta(query) {
                 break;
             case "Property":
                 this.visitProperty(tgt);
+                break;
+            case "NewExpression":
+                this.visitNewExpression(tgt);
                 break;
         }
     }
