@@ -21,7 +21,7 @@ To get the initialization expression of a variable named `"theValue"` (ie. `var 
 ```
 var query = new foresta("#theValue");
 query.visit(theSyntaxTree);
-var expression = v.results[0].init; // the binary expression for '4+2'
+var expression = query.results[0].init; // the binary expression for '4+2'
 ```
 
 All global variables declared in this javascript program can be selected with the selector `"Program VariableDeclaration VariableDeclarator"`
