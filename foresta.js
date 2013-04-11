@@ -7,8 +7,19 @@ function foresta(query) {
 
     for (var i = 0; i < parts.length; i++) {
         var part = parts[i];
+        var propertySelectors = new Array();
         if (part.length = 0 || part === " ") continue;
-
+        
+        var propertySelectorIndex = part.indexOf(":");
+        if (propertySelectorIndex > -1) {
+            // there's one or more property selector
+            var subParts = part.split(":");
+            part = subParts[0];
+            for(var i=1;i<subParts.length;i++) {
+                propertySelectors.push(subParts[i]);
+            }
+        }
+        
         var filter = null;
         if (part.substring(0, 1) === "#") {
             // identifier
@@ -35,7 +46,10 @@ function foresta(query) {
             };
         }
 
-        if (filter != null) this.filters.push(filter);
+        if (filter != null) {
+            filter.propertySelectors = propertySelectors;
+            this.filters.push(filter);
+        }
     }
 
     this.results = new Array();
@@ -56,26 +70,34 @@ function foresta(query) {
         }
     };
     this.visitVariableDeclarator = function (variable) {
-        variable.id.parent = variable;
-        variable.init.parent = variable;
-        this.visit(variable.id);
-        this.visit(variable.init);
+        if (variable.id !== null) {
+            variable.id.parent = variable;
+            this.visit(variable.id);
+        }
+        if (variable.init !== null) {
+            variable.init.parent = variable;
+            this.visit(variable.init);
+        }
     };
     this.visitIdentifier = function (id) {
         // console.log(id.name);
     };
     this.visitBinaryExpression = function (expression) {
-        expression.left.parent = expression;
-        expression.right.parent = expression;
-
-        this.visit(expression.left);
-        this.visit(expression.right);
+        if (expression.left !== null) {
+            expression.left.parent = expression;
+            this.visit(expression.left);
+        }
+        
+        if (expression.right !== null) {
+            expression.right.parent = expression;
+            this.visit(expression.right);
+        }
     };
     this.visitLiteral = function (literal) {
         // console.log(literal.value);
     };
     this.visitFunctionExpression = function (fx) {
-        if (fx.id != null) {
+        if (fx.id !== null) {
             fx.id.parent = fx;
             this.visit(fx.id);
         }
@@ -89,13 +111,16 @@ function foresta(query) {
             def.parent = fx;
             this.visit(def);
         }
-        fx.body.parent = fx;
-        this.visit(fx.body);
+        
+        if (fx.body !== null) {
+            fx.body.parent = fx;
+            this.visit(fx.body);
+        }
         //generator
         // expression
     };
     this.visitBlockStatement = function(block) {
-        for(var i=0;block.body.length;i++) {
+        for(var i=0;i<block.body.length;i++) {
             var e = block.body[i];
             e.parent = block;
             this.visit(e);
@@ -105,14 +130,21 @@ function foresta(query) {
         this.visitBinaryExpression(ex);
     };
     this.visitMemberExpression = function(member) {
-        member.object.parent = member;
-        member.property.parent = member;
-        this.visit(member.object);
-        this.visit(member.property);
+        if (member.object !== null) {
+            member.object.parent = member;
+            this.visit(member.object);
+        }
+        
+        if (member.property !== null) {
+            member.property.parent = member;
+            this.visit(member.property);
+        }
     };
     this.visitExpressionStatement = function(ex) {
-        ex.expression.parent = ex;
-        this.visit(ex.expression);
+        if (ex.expression !== null) {
+            ex.expression.parent = ex;
+            this.visit(ex.expression);
+        }
     };
     this.visitObjectExpression = function(ex) {
         for(var i=0;i<ex.properties.length;i++) {
@@ -122,39 +154,69 @@ function foresta(query) {
         }
     };
     this.visitProperty = function(prop) {
-        prop.key.parent = prop;
-        prop.value.parent = prop;
-        this.visit(prop.key);
-        this.visit(prop.value);
+        if (prop.key !== null) {
+            prop.key.parent = prop;
+            this.visit(prop.key);
+        }
+        
+        if (prop.value) {
+            prop.value.parent = prop;
+            this.visit(prop.value);
+        }
     };
     this.visitNewExpression = function(ex) {
-        ex.callee.parent = ex;
-        this.visit(ex.callee);
+        if (ex.callee !== null) {
+            ex.callee.parent = ex;
+            this.visit(ex.callee);
+        }
+        
         for(var i=0;i<ex.arguments.length;i++) {
             var arg = ex.arguments[i];
             arg.parent = ex;
             this.visit(arg);
         }
     };
-    this.evaluateFilters = function(tgt) {
+    this.visitCallExpression = function(call) {
+        this.visitNewExpression(call);
+    };
+    this.evaluateFilters = function(expression) {
         var filterMatched = true;
-        var context = tgt;
+        var currentExpression = expression;
         for (var i = this.filters.length - 1; i >= 0; i--) {
             var filter = this.filters[i];
-            if (context && filter.test(context)) {
+            if (currentExpression && filter.test(currentExpression)) {
+                currentExpression.matchedFilter = filter;
                 // move up the chain
-                context = context.parent;
+                currentExpression = currentExpression.parent;
             } else {
                 filterMatched = false;
                 break;
             }
         }
 
+        //console.log(expression);
         if (filterMatched) {
-            this.results.push(tgt);
+            if (expression.matchedFilter.propertySelectors.length===0) {
+                // no further filters, just push the expression
+                this.results.push(expression);
+            }
+            else {
+                // we have property selectors, grab the result
+                var properties = expression.matchedFilter.propertySelectors;
+                var currentResult = expression;
+                for(var i=0;i<properties.length;i++) {
+                    var propFilter = properties[i]; 
+                    if (currentResult[propFilter]) {
+                        currentResult = currentResult[propFilter]; 
+                    }
+                }
+                this.results.push(currentResult);
+            }
         }  
     },
     this.visit = function (tgt) {
+        if (tgt === null) return;
+        
         this.evaluateFilters(tgt);
 
         switch (tgt.type) {
@@ -199,6 +261,9 @@ function foresta(query) {
                 break;
             case "NewExpression":
                 this.visitNewExpression(tgt);
+                break;
+            case "CallExpression":
+                this.visitCallExpression(tgt);
                 break;
         }
     }
