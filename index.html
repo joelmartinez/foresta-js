@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <meta charset='utf-8' />
+    <meta http-equiv="X-UA-Compatible" content="chrome=1" />
+    <meta name="description" content="Foresta-js : Selector engine for JavaScript syntax trees" />
+
+    <link rel="stylesheet" type="text/css" media="screen" href="stylesheets/stylesheet.css">
+
+    <title>Foresta-js</title>
+  </head>
+
+  <body>
+
+    <!-- HEADER -->
+    <div id="header_wrap" class="outer">
+        <header class="inner">
+          <a id="forkme_banner" href="https://github.com/joelmartinez/foresta-js">View on GitHub</a>
+
+          <h1 id="project_title">Foresta-js</h1>
+          <h2 id="project_tagline">Selector engine for JavaScript syntax trees</h2>
+
+            <section id="downloads">
+              <a class="zip_download_link" href="https://github.com/joelmartinez/foresta-js/zipball/master">Download this project as a .zip file</a>
+              <a class="tar_download_link" href="https://github.com/joelmartinez/foresta-js/tarball/master">Download this project as a tar.gz file</a>
+            </section>
+        </header>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div id="main_content_wrap" class="outer">
+      <section id="main_content" class="inner">
+        <p><img src="https://raw.github.com/joelmartinez/foresta-js/master/logo.png" alt="Foresta"></p>
+
+<p>Selector engine for JavaScript syntax trees. Lets you write queries against abstract syntax trees generated 
+by Esprima (<a href="http://esprima.org/">http://esprima.org/</a>) to pull out specific expressions from the program.</p>
+
+<p>There are three basic kinds of query components you can use:</p>
+
+<ul>
+<li>
+<code>#IdentifierName</code> - Identifier selectors let you match against an Identifier expression's name property. So for example, if you want to select a specific variable declaration you can use this.</li>
+<li>
+<code>ExpressionType</code> - You can match a specific expression type by simply using the type name in the selector. The full list of expression types can be found in the Mozilla Spidermonkey Parser API documentation: <a href="https://developer.mozilla.org/en-US/docs/SpiderMonkey/Parser_API">https://developer.mozilla.org/en-US/docs/SpiderMonkey/Parser_API</a>
+</li>
+<li>
+<code>*</code> - wildcard, will match any expression type.</li>
+</ul><p>The query language also supports <em>contextual property modifiers</em>. These modifiers can be added to the last query component to let you refine what object gets put into the results list.
+Property modifiers are added with a semicolon: <code>&lt;component&gt;:property:modifier</code></p>
+
+<p><em>Examples:</em></p>
+
+<p>You can pull all literal values in your program by using the query <code>"Literal"</code>.</p>
+
+<p>To get the initialization expression of a variable named <code>"theValue"</code> (ie. <code>var theValue = 4+2;</code>)</p>
+
+<pre><code>var query = new foresta("#theValue");
+query.visit(theSyntaxTree);
+var expression = query.results[0].init; // the binary expression for '4+2'
+</code></pre>
+
+<p>All global variables declared in this javascript program can be selected with the selector <code>"Program VariableDeclaration VariableDeclarator"</code></p>
+
+<p>Contextual Property Modifiers can be useful to select a specific expression that is referred to by an identifer. For example, given the following expression:</p>
+
+<pre><code>var a = {
+  update: function() {
+    var s;
+    }
+};
+</code></pre>
+
+<p>You can get the <code>FunctionExpression</code> by issuing this query: <code>ObjectExpression Property #update:parent:value</code>.</p>
+      </section>
+    </div>
+
+    <!-- FOOTER  -->
+    <div id="footer_wrap" class="outer">
+      <footer class="inner">
+        <p class="copyright">Foresta-js maintained by <a href="https://github.com/joelmartinez">joelmartinez</a></p>
+        <p>Published with <a href="http://pages.github.com">GitHub Pages</a></p>
+      </footer>
+    </div>
+
+    
+
+  </body>
+</html>
