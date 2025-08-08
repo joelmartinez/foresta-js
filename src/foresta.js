@@ -8,7 +8,7 @@ function foresta(query) {
     for (var i = 0; i < parts.length; i++) {
         var part = parts[i];
         var propertySelectors = new Array();
-        if (part.length = 0 || part === " ") continue;
+        if (part.length === 0 || part === " ") continue;
         
         var propertySelectorIndex = part.indexOf(":");
         if (propertySelectorIndex > -1) {
@@ -106,10 +106,13 @@ function foresta(query) {
             param.parent = fx;
             this.visit(param);
         }
-        for(var i = 0;i<fx.defaults.length;i++){
-            var def = fx.defaults[i];
-            def.parent = fx;
-            this.visit(def);
+        // The 'defaults' property was removed in newer esprima versions
+        if (fx.defaults) {
+            for(var i = 0;i<fx.defaults.length;i++){
+                var def = fx.defaults[i];
+                def.parent = fx;
+                this.visit(def);
+            }
         }
         
         if (fx.body !== null) {
@@ -195,7 +198,7 @@ function foresta(query) {
         }
 
         //console.log(expression);
-        if (filterMatched) {
+        if (filterMatched && expression.matchedFilter) {
             if (expression.matchedFilter.propertySelectors.length===0) {
                 // no further filters, just push the expression
                 this.results.push(expression);
@@ -267,4 +270,14 @@ function foresta(query) {
                 break;
         }
     }
+}
+
+// Export for CommonJS
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = foresta;
+}
+
+// Export for browser global usage
+if (typeof window !== 'undefined') {
+    window.foresta = foresta;
 }
