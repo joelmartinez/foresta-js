@@ -37,40 +37,51 @@ function foresta(query) {
         var current = '';
         var i = 0;
         var combinator = ' '; // default descendant
+        var bracketDepth = 0;
         
         while (i < sequence.length) {
             var ch = sequence[i];
             
-            // Skip whitespace at the start
-            if (current === '' && /\s/.test(ch)) {
-                i++;
-                continue;
+            // Track bracket depth
+            if (ch === '[') {
+                bracketDepth++;
+            } else if (ch === ']') {
+                bracketDepth--;
             }
             
-            // Check for combinators
-            if (/\s/.test(ch) && current !== '') {
-                // Space combinator (descendant)
-                var selector = this.parseSelector(current.trim());
-                selector.combinator = combinator;
-                selectors.push(selector);
-                current = '';
-                combinator = ' ';
-                i++;
-                continue;
-            } else if (ch === '>' || ch === '+' || ch === '~') {
-                if (current.trim()) {
+            // Only recognize combinators outside of brackets
+            if (bracketDepth === 0) {
+                // Skip whitespace at the start
+                if (current === '' && /\s/.test(ch)) {
+                    i++;
+                    continue;
+                }
+                
+                // Check for combinators
+                if (/\s/.test(ch) && current !== '') {
+                    // Space combinator (descendant)
                     var selector = this.parseSelector(current.trim());
                     selector.combinator = combinator;
                     selectors.push(selector);
                     current = '';
-                }
-                combinator = ch;
-                i++;
-                // Skip whitespace after combinator
-                while (i < sequence.length && /\s/.test(sequence[i])) {
+                    combinator = ' ';
                     i++;
+                    continue;
+                } else if (ch === '>' || ch === '+' || ch === '~') {
+                    if (current.trim()) {
+                        var selector = this.parseSelector(current.trim());
+                        selector.combinator = combinator;
+                        selectors.push(selector);
+                        current = '';
+                    }
+                    combinator = ch;
+                    i++;
+                    // Skip whitespace after combinator
+                    while (i < sequence.length && /\s/.test(sequence[i])) {
+                        i++;
+                    }
+                    continue;
                 }
-                continue;
             }
             
             current += ch;
@@ -119,9 +130,20 @@ function foresta(query) {
         // Parse attributes and pseudo-classes
         while (i < selectorStr.length) {
             if (selectorStr[i] === '[') {
-                // Attribute selector
-                var endBracket = selectorStr.indexOf(']', i);
-                if (endBracket !== -1) {
+                // Attribute selector - find matching closing bracket
+                var bracketDepth = 1;
+                var endBracket = i + 1;
+                while (endBracket < selectorStr.length && bracketDepth > 0) {
+                    if (selectorStr[endBracket] === '[') {
+                        bracketDepth++;
+                    } else if (selectorStr[endBracket] === ']') {
+                        bracketDepth--;
+                    }
+                    if (bracketDepth > 0) {
+                        endBracket++;
+                    }
+                }
+                if (endBracket < selectorStr.length) {
                     var attrStr = selectorStr.substring(i + 1, endBracket);
                     selector.attributes.push(this.parseAttribute(attrStr));
                     i = endBracket + 1;
@@ -129,40 +151,30 @@ function foresta(query) {
                     i++;
                 }
             } else if (selectorStr[i] === ':') {
-                // Check for property selectors (legacy)
-                var nextColon = selectorStr.indexOf(':', i + 1);
-                var nextBracket = selectorStr.indexOf('[', i + 1);
-                var nextPseudo = selectorStr.indexOf(':', i + 1);
+                // Check for pseudo-classes
+                var remaining = selectorStr.substring(i + 1);
                 
-                // If this looks like a pseudo-class
-                if (nextBracket === -1 || (nextColon !== -1 && nextColon < nextBracket)) {
-                    // Could be property selector or pseudo-class
-                    var remaining = selectorStr.substring(i + 1);
-                    
-                    // Check for pseudo-class patterns
-                    if (remaining.match(/^(not|has|first-child|last-child|nth-child|empty)/)) {
-                        var pseudoMatch = remaining.match(/^([a-z-]+)(?:\(([^)]+)\))?/);
-                        if (pseudoMatch) {
-                            selector.pseudoClasses.push({
-                                name: pseudoMatch[1],
-                                argument: pseudoMatch[2] || null
-                            });
-                            i += pseudoMatch[0].length + 1;
-                        } else {
-                            i++;
-                        }
+                // Check for pseudo-class patterns
+                if (remaining.match(/^(not|has|first-child|last-child|nth-child|empty)/)) {
+                    var pseudoMatch = remaining.match(/^([a-z-]+)(?:\(([^)]+)\))?/);
+                    if (pseudoMatch) {
+                        selector.pseudoClasses.push({
+                            name: pseudoMatch[1],
+                            argument: pseudoMatch[2] || null
+                        });
+                        i += pseudoMatch[0].length + 1;
                     } else {
-                        // Property selector (legacy)
-                        var colonIdx = selectorStr.indexOf(':', i + 1);
-                        var endIdx = colonIdx !== -1 ? colonIdx : selectorStr.length;
-                        var propName = selectorStr.substring(i + 1, endIdx);
-                        if (propName) {
-                            selector.propertySelectors.push(propName);
-                        }
-                        i = endIdx;
+                        i++;
                     }
                 } else {
-                    i++;
+                    // Property selector (legacy)
+                    var colonIdx = selectorStr.indexOf(':', i + 1);
+                    var endIdx = colonIdx !== -1 ? colonIdx : selectorStr.length;
+                    var propName = selectorStr.substring(i + 1, endIdx);
+                    if (propName) {
+                        selector.propertySelectors.push(propName);
+                    }
+                    i = endIdx;
                 }
             } else {
                 i++;
