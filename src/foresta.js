@@ -1,55 +1,415 @@
 function foresta(query) {
     this.query = query;
 
-    // parse out the query
-    var parts = this.query.split(" ");
-    this.filters = new Array();
-
-    for (var i = 0; i < parts.length; i++) {
-        var part = parts[i];
-        var propertySelectors = new Array();
-        if (part.length === 0 || part === " ") continue;
+    // Query parsing methods - defined first so they can be called during initialization
+    this.parseQuery = function(query) {
+        // Split by comma for OR groups
+        var groups = [];
+        var currentGroup = '';
+        var parenDepth = 0;
+        var bracketDepth = 0;
         
-        var propertySelectorIndex = part.indexOf(":");
-        if (propertySelectorIndex > -1) {
-            // there's one or more property selector
-            var subParts = part.split(":");
-            part = subParts[0];
-            for(var i=1;i<subParts.length;i++) {
-                propertySelectors.push(subParts[i]);
+        for (var i = 0; i < query.length; i++) {
+            var ch = query[i];
+            if (ch === '(') parenDepth++;
+            else if (ch === ')') parenDepth--;
+            else if (ch === '[') bracketDepth++;
+            else if (ch === ']') bracketDepth--;
+            else if (ch === ',' && parenDepth === 0 && bracketDepth === 0) {
+                if (currentGroup.trim()) {
+                    groups.push(this.parseSelectorSequence(currentGroup.trim()));
+                }
+                currentGroup = '';
+                continue;
+            }
+            currentGroup += ch;
+        }
+        if (currentGroup.trim()) {
+            groups.push(this.parseSelectorSequence(currentGroup.trim()));
+        }
+        
+        return groups.length > 0 ? groups : [[]];
+    };
+    
+    this.parseSelectorSequence = function(sequence) {
+        // Parse a sequence of selectors with combinators
+        var selectors = [];
+        var current = '';
+        var i = 0;
+        var combinator = ' '; // default descendant
+        
+        while (i < sequence.length) {
+            var ch = sequence[i];
+            
+            // Skip whitespace at the start
+            if (current === '' && /\s/.test(ch)) {
+                i++;
+                continue;
+            }
+            
+            // Check for combinators
+            if (/\s/.test(ch) && current !== '') {
+                // Space combinator (descendant)
+                var selector = this.parseSelector(current.trim());
+                selector.combinator = combinator;
+                selectors.push(selector);
+                current = '';
+                combinator = ' ';
+                i++;
+                continue;
+            } else if (ch === '>' || ch === '+' || ch === '~') {
+                if (current.trim()) {
+                    var selector = this.parseSelector(current.trim());
+                    selector.combinator = combinator;
+                    selectors.push(selector);
+                    current = '';
+                }
+                combinator = ch;
+                i++;
+                // Skip whitespace after combinator
+                while (i < sequence.length && /\s/.test(sequence[i])) {
+                    i++;
+                }
+                continue;
+            }
+            
+            current += ch;
+            i++;
+        }
+        
+        if (current.trim()) {
+            var selector = this.parseSelector(current.trim());
+            selector.combinator = combinator;
+            selectors.push(selector);
+        }
+        
+        return selectors;
+    };
+    
+    this.parseSelector = function(selectorStr) {
+        var selector = {
+            type: null,
+            identifier: null,
+            attributes: [],
+            pseudoClasses: [],
+            propertySelectors: [],
+            combinator: ' ',
+            test: null
+        };
+        
+        var i = 0;
+        var baseSelector = '';
+        
+        // Extract base selector (type or identifier)
+        while (i < selectorStr.length && selectorStr[i] !== '[' && selectorStr[i] !== ':') {
+            baseSelector += selectorStr[i];
+            i++;
+        }
+        
+        // Parse base selector
+        if (baseSelector.startsWith('#')) {
+            selector.identifier = baseSelector.substring(1);
+            selector.type = 'Identifier';
+        } else if (baseSelector === '*') {
+            selector.type = '*';
+        } else if (baseSelector) {
+            selector.type = baseSelector;
+        }
+        
+        // Parse attributes and pseudo-classes
+        while (i < selectorStr.length) {
+            if (selectorStr[i] === '[') {
+                // Attribute selector
+                var endBracket = selectorStr.indexOf(']', i);
+                if (endBracket !== -1) {
+                    var attrStr = selectorStr.substring(i + 1, endBracket);
+                    selector.attributes.push(this.parseAttribute(attrStr));
+                    i = endBracket + 1;
+                } else {
+                    i++;
+                }
+            } else if (selectorStr[i] === ':') {
+                // Check for property selectors (legacy)
+                var nextColon = selectorStr.indexOf(':', i + 1);
+                var nextBracket = selectorStr.indexOf('[', i + 1);
+                var nextPseudo = selectorStr.indexOf(':', i + 1);
+                
+                // If this looks like a pseudo-class
+                if (nextBracket === -1 || (nextColon !== -1 && nextColon < nextBracket)) {
+                    // Could be property selector or pseudo-class
+                    var remaining = selectorStr.substring(i + 1);
+                    
+                    // Check for pseudo-class patterns
+                    if (remaining.match(/^(not|has|first-child|last-child|nth-child|empty)/)) {
+                        var pseudoMatch = remaining.match(/^([a-z-]+)(?:\(([^)]+)\))?/);
+                        if (pseudoMatch) {
+                            selector.pseudoClasses.push({
+                                name: pseudoMatch[1],
+                                argument: pseudoMatch[2] || null
+                            });
+                            i += pseudoMatch[0].length + 1;
+                        } else {
+                            i++;
+                        }
+                    } else {
+                        // Property selector (legacy)
+                        var colonIdx = selectorStr.indexOf(':', i + 1);
+                        var endIdx = colonIdx !== -1 ? colonIdx : selectorStr.length;
+                        var propName = selectorStr.substring(i + 1, endIdx);
+                        if (propName) {
+                            selector.propertySelectors.push(propName);
+                        }
+                        i = endIdx;
+                    }
+                } else {
+                    i++;
+                }
+            } else {
+                i++;
             }
         }
         
-        var filter = null;
-        if (part.substring(0, 1) === "#") {
-            // identifier
-            filter = {
-                value: part.substring(1, part.length),
-                test: function (expression) {
-                    return expression.type === "Identifier" && expression.name === this.value;
-                }
-            };
-        } else if (part === "*") {
-            // wildcard ... match anything
-            filter = {
-                test: function (expression) {
-                    return true
-                }
-            };
-        } else {
-            // this is probably just a bare expression type filter
-            filter = {
-                value: part,
-                test: function (expression) {
-                    return expression.type === this.value;
-                }
+        // Create test function
+        selector.test = this.createTestFunction(selector);
+        selector.value = selector.type; // For legacy compatibility
+        
+        return selector;
+    };
+    
+    this.parseAttribute = function(attrStr) {
+        // Parse attribute selector: [property operator value]
+        // Operators: =, ^=, $=, *=, ~= (regex)
+        var match;
+        
+        // Regex pattern: [property~/pattern/]
+        if ((match = attrStr.match(/^([a-zA-Z._]+)~\/(.+)\/$/))) {
+            return {
+                property: match[1],
+                operator: '~=',
+                value: new RegExp(match[2])
             };
         }
+        
+        // Starts with: [property^="value"]
+        if ((match = attrStr.match(/^([a-zA-Z._]+)\^=["']?([^"']*)["']?$/))) {
+            return {
+                property: match[1],
+                operator: '^=',
+                value: match[2]
+            };
+        }
+        
+        // Ends with: [property$="value"]
+        if ((match = attrStr.match(/^([a-zA-Z._]+)\$=["']?([^"']*)["']?$/))) {
+            return {
+                property: match[1],
+                operator: '$=',
+                value: match[2]
+            };
+        }
+        
+        // Contains: [property*="value"]
+        if ((match = attrStr.match(/^([a-zA-Z._]+)\*=["']?([^"']*)["']?$/))) {
+            return {
+                property: match[1],
+                operator: '*=',
+                value: match[2]
+            };
+        }
+        
+        // Exact match: [property=value] or [property="value"]
+        if ((match = attrStr.match(/^([a-zA-Z._]+)=(.+)$/))) {
+            var value = match[2];
+            // Remove quotes if present
+            if ((value.startsWith('"') && value.endsWith('"')) ||
+                (value.startsWith("'") && value.endsWith("'"))) {
+                value = value.substring(1, value.length - 1);
+            }
+            // Try to parse as number
+            var numValue = parseFloat(value);
+            if (!isNaN(numValue) && numValue.toString() === value) {
+                value = numValue;
+            }
+            return {
+                property: match[1],
+                operator: '=',
+                value: value
+            };
+        }
+        
+        return null;
+    };
+    
+    this.createTestFunction = function(selector) {
+        var that = this;
+        return function(expression) {
+            // Type check
+            if (selector.type === '*') {
+                // Wildcard matches anything
+            } else if (selector.type === 'Identifier' && selector.identifier) {
+                if (expression.type !== 'Identifier' || expression.name !== selector.identifier) {
+                    return false;
+                }
+            } else if (selector.type && expression.type !== selector.type) {
+                return false;
+            }
+            
+            // Attribute checks
+            for (var i = 0; i < selector.attributes.length; i++) {
+                var attr = selector.attributes[i];
+                if (!that.testAttribute(expression, attr)) {
+                    return false;
+                }
+            }
+            
+            // Pseudo-class checks
+            for (var i = 0; i < selector.pseudoClasses.length; i++) {
+                var pseudo = selector.pseudoClasses[i];
+                if (!that.testPseudoClass(expression, pseudo)) {
+                    return false;
+                }
+            }
+            
+            return true;
+        };
+    };
+    
+    this.testAttribute = function(expression, attr) {
+        if (!attr) return true;
+        
+        // Support nested property access (e.g., "callee.name")
+        var value = this.getNestedProperty(expression, attr.property);
+        
+        if (value === undefined || value === null) {
+            return false;
+        }
+        
+        switch (attr.operator) {
+            case '=':
+                return value === attr.value;
+            case '^=':
+                return String(value).startsWith(attr.value);
+            case '$=':
+                return String(value).endsWith(attr.value);
+            case '*=':
+                return String(value).indexOf(attr.value) !== -1;
+            case '~=':
+                return attr.value.test(String(value));
+            default:
+                return false;
+        }
+    };
+    
+    this.getNestedProperty = function(obj, path) {
+        var parts = path.split('.');
+        var current = obj;
+        for (var i = 0; i < parts.length; i++) {
+            if (current === null || current === undefined) {
+                return undefined;
+            }
+            current = current[parts[i]];
+        }
+        return current;
+    };
+    
+    this.testPseudoClass = function(expression, pseudo) {
+        switch (pseudo.name) {
+            case 'first-child':
+                return this.isFirstChild(expression);
+            case 'last-child':
+                return this.isLastChild(expression);
+            case 'nth-child':
+                return this.isNthChild(expression, pseudo.argument);
+            case 'empty':
+                return this.isEmpty(expression);
+            case 'has':
+                return this.hasDescendant(expression, pseudo.argument);
+            case 'not':
+                return !this.matchesSelector(expression, pseudo.argument);
+            default:
+                return true;
+        }
+    };
+    
+    this.isFirstChild = function(expression) {
+        if (!expression.parent) return false;
+        var siblings = this.getSiblings(expression);
+        return siblings.length > 0 && siblings[0] === expression;
+    };
+    
+    this.isLastChild = function(expression) {
+        if (!expression.parent) return false;
+        var siblings = this.getSiblings(expression);
+        return siblings.length > 0 && siblings[siblings.length - 1] === expression;
+    };
+    
+    this.isNthChild = function(expression, n) {
+        if (!expression.parent) return false;
+        var siblings = this.getSiblings(expression);
+        var index = siblings.indexOf(expression);
+        return index !== -1 && index === parseInt(n) - 1;
+    };
+    
+    this.isEmpty = function(expression) {
+        // Check if node has no children
+        var childProps = ['body', 'declarations', 'properties', 'elements', 'arguments', 'params'];
+        for (var i = 0; i < childProps.length; i++) {
+            var prop = childProps[i];
+            if (expression[prop]) {
+                if (Array.isArray(expression[prop]) && expression[prop].length > 0) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    };
+    
+    this.hasDescendant = function(expression, selectorStr) {
+        var tempQuery = new foresta(selectorStr);
+        tempQuery.visit(expression);
+        return tempQuery.results.length > 0;
+    };
+    
+    this.matchesSelector = function(expression, selectorStr) {
+        var selector = this.parseSelector(selectorStr);
+        return selector.test(expression);
+    };
+    
+    this.getSiblings = function(expression) {
+        if (!expression.parent) return [];
+        var parent = expression.parent;
+        
+        // Find the array that contains this expression
+        if (parent.body && Array.isArray(parent.body)) {
+            return parent.body;
+        } else if (parent.declarations && Array.isArray(parent.declarations)) {
+            return parent.declarations;
+        } else if (parent.properties && Array.isArray(parent.properties)) {
+            return parent.properties;
+        } else if (parent.elements && Array.isArray(parent.elements)) {
+            return parent.elements;
+        } else if (parent.arguments && Array.isArray(parent.arguments)) {
+            return parent.arguments;
+        } else if (parent.params && Array.isArray(parent.params)) {
+            return parent.params;
+        }
+        
+        return [];
+    };
 
-        if (filter != null) {
-            filter.propertySelectors = propertySelectors;
-            this.filters.push(filter);
+    // Parse the query into selector groups (comma-separated)
+    this.selectorGroups = this.parseQuery(query);
+    
+    // Legacy support - convert to old filter format if simple query
+    this.filters = [];
+    if (this.selectorGroups.length === 1 && this.selectorGroups[0].length === 1) {
+        var selector = this.selectorGroups[0][0];
+        if (selector.combinator === ' ' && !selector.attributes && !selector.pseudoClasses) {
+            this.filters = [selector];
         }
+    } else if (this.selectorGroups.length === 1) {
+        // Single group with multiple selectors (descendant)
+        this.filters = this.selectorGroups[0];
     }
 
     this.results = new Array();
@@ -183,39 +543,111 @@ function foresta(query) {
         this.visitNewExpression(call);
     };
     this.evaluateFilters = function(expression) {
-        var filterMatched = true;
-        var currentExpression = expression;
-        for (var i = this.filters.length - 1; i >= 0; i--) {
-            var filter = this.filters[i];
-            if (currentExpression && filter.test(currentExpression)) {
-                currentExpression.matchedFilter = filter;
-                // move up the chain
-                currentExpression = currentExpression.parent;
-            } else {
-                filterMatched = false;
-                break;
+        // Check all selector groups (OR logic)
+        for (var g = 0; g < this.selectorGroups.length; g++) {
+            var selectors = this.selectorGroups[g];
+            if (this.matchesSelectorSequence(expression, selectors)) {
+                // Get the last selector to check for property selectors
+                var lastSelector = selectors[selectors.length - 1];
+                
+                if (lastSelector.propertySelectors && lastSelector.propertySelectors.length > 0) {
+                    // Apply property selectors
+                    var currentResult = expression;
+                    for (var i = 0; i < lastSelector.propertySelectors.length; i++) {
+                        var propFilter = lastSelector.propertySelectors[i];
+                        if (currentResult[propFilter]) {
+                            currentResult = currentResult[propFilter];
+                        }
+                    }
+                    this.results.push(currentResult);
+                } else {
+                    this.results.push(expression);
+                }
+                return; // Match found, no need to check other groups
             }
         }
-
-        //console.log(expression);
-        if (filterMatched && expression.matchedFilter) {
-            if (expression.matchedFilter.propertySelectors.length===0) {
-                // no further filters, just push the expression
-                this.results.push(expression);
+    };
+    
+    this.matchesSelectorSequence = function(expression, selectors) {
+        if (selectors.length === 0) return false;
+        
+        // Start from the last selector and work backwards
+        var currentExpression = expression;
+        
+        for (var i = selectors.length - 1; i >= 0; i--) {
+            var selector = selectors[i];
+            
+            if (!currentExpression) return false;
+            
+            // Test current expression against selector
+            if (!selector.test(currentExpression)) {
+                return false;
             }
-            else {
-                // we have property selectors, grab the result
-                var properties = expression.matchedFilter.propertySelectors;
-                var currentResult = expression;
-                for(var i=0;i<properties.length;i++) {
-                    var propFilter = properties[i]; 
-                    if (currentResult[propFilter]) {
-                        currentResult = currentResult[propFilter]; 
-                    }
+            
+            // Mark matched filter for legacy support
+            currentExpression.matchedFilter = selector;
+            
+            // Move to next expression based on combinator
+            if (i > 0) {
+                var prevCombinator = selectors[i].combinator;
+                
+                switch (prevCombinator) {
+                    case ' ':
+                        // Space in legacy mode: consecutive parent (not descendant!)
+                        // For backward compatibility with original implementation
+                        currentExpression = currentExpression.parent;
+                        break;
+                    case '>':
+                        // Direct child: parent must match
+                        currentExpression = currentExpression.parent;
+                        break;
+                    case '+':
+                        // Adjacent sibling: previous sibling must match
+                        currentExpression = this.getPreviousSibling(currentExpression);
+                        break;
+                    case '~':
+                        // General sibling: any previous sibling must match
+                        currentExpression = this.findPreviousSibling(currentExpression, selectors[i - 1]);
+                        break;
+                    default:
+                        currentExpression = currentExpression.parent;
                 }
-                this.results.push(currentResult);
             }
-        }  
+        }
+        
+        return true;
+    };
+    
+    this.findAncestor = function(expression, selector) {
+        var current = expression.parent;
+        while (current) {
+            if (selector.test(current)) {
+                return current;
+            }
+            current = current.parent;
+        }
+        return null;
+    };
+    
+    this.getPreviousSibling = function(expression) {
+        var siblings = this.getSiblings(expression);
+        var index = siblings.indexOf(expression);
+        if (index > 0) {
+            return siblings[index - 1];
+        }
+        return null;
+    };
+    
+    this.findPreviousSibling = function(expression, selector) {
+        var siblings = this.getSiblings(expression);
+        var index = siblings.indexOf(expression);
+        
+        for (var i = index - 1; i >= 0; i--) {
+            if (selector.test(siblings[i])) {
+                return siblings[i];
+            }
+        }
+        return null;
     },
     this.visit = function (tgt) {
         if (tgt === null) return;
@@ -268,6 +700,148 @@ function foresta(query) {
             case "CallExpression":
                 this.visitCallExpression(tgt);
                 break;
+            case "FunctionDeclaration":
+                this.visitFunctionDeclaration(tgt);
+                break;
+            case "IfStatement":
+                this.visitIfStatement(tgt);
+                break;
+            case "ReturnStatement":
+                this.visitReturnStatement(tgt);
+                break;
+            case "SwitchStatement":
+                this.visitSwitchStatement(tgt);
+                break;
+            case "SwitchCase":
+                this.visitSwitchCase(tgt);
+                break;
+            case "ExportNamedDeclaration":
+                this.visitExportNamedDeclaration(tgt);
+                break;
+            case "ExportDefaultDeclaration":
+                this.visitExportDefaultDeclaration(tgt);
+                break;
+            case "ArrayExpression":
+                this.visitArrayExpression(tgt);
+                break;
+            case "ArrowFunctionExpression":
+                this.visitArrowFunctionExpression(tgt);
+                break;
+            case "AwaitExpression":
+                this.visitAwaitExpression(tgt);
+                break;
+        }
+    };
+    
+    this.visitFunctionDeclaration = function(decl) {
+        if (decl.id !== null) {
+            decl.id.parent = decl;
+            this.visit(decl.id);
+        }
+        for (var i = 0; i < decl.params.length; i++) {
+            var param = decl.params[i];
+            param.parent = decl;
+            this.visit(param);
+        }
+        if (decl.body !== null) {
+            decl.body.parent = decl;
+            this.visit(decl.body);
+        }
+    };
+    
+    this.visitIfStatement = function(stmt) {
+        if (stmt.test !== null) {
+            stmt.test.parent = stmt;
+            this.visit(stmt.test);
+        }
+        if (stmt.consequent !== null) {
+            stmt.consequent.parent = stmt;
+            this.visit(stmt.consequent);
+        }
+        if (stmt.alternate !== null) {
+            stmt.alternate.parent = stmt;
+            this.visit(stmt.alternate);
+        }
+    };
+    
+    this.visitReturnStatement = function(stmt) {
+        if (stmt.argument !== null) {
+            stmt.argument.parent = stmt;
+            this.visit(stmt.argument);
+        }
+    };
+    
+    this.visitSwitchStatement = function(stmt) {
+        if (stmt.discriminant !== null) {
+            stmt.discriminant.parent = stmt;
+            this.visit(stmt.discriminant);
+        }
+        for (var i = 0; i < stmt.cases.length; i++) {
+            var caseNode = stmt.cases[i];
+            caseNode.parent = stmt;
+            this.visit(caseNode);
+        }
+    };
+    
+    this.visitSwitchCase = function(caseNode) {
+        if (caseNode.test !== null) {
+            caseNode.test.parent = caseNode;
+            this.visit(caseNode.test);
+        }
+        for (var i = 0; i < caseNode.consequent.length; i++) {
+            var stmt = caseNode.consequent[i];
+            stmt.parent = caseNode;
+            this.visit(stmt);
+        }
+    };
+    
+    this.visitExportNamedDeclaration = function(exp) {
+        if (exp.declaration !== null) {
+            exp.declaration.parent = exp;
+            this.visit(exp.declaration);
+        }
+        if (exp.specifiers) {
+            for (var i = 0; i < exp.specifiers.length; i++) {
+                var spec = exp.specifiers[i];
+                spec.parent = exp;
+                this.visit(spec);
+            }
+        }
+    };
+    
+    this.visitExportDefaultDeclaration = function(exp) {
+        if (exp.declaration !== null) {
+            exp.declaration.parent = exp;
+            this.visit(exp.declaration);
+        }
+    };
+    
+    this.visitArrayExpression = function(arr) {
+        for (var i = 0; i < arr.elements.length; i++) {
+            var elem = arr.elements[i];
+            if (elem !== null) {
+                elem.parent = arr;
+                this.visit(elem);
+            }
+        }
+    };
+    
+    this.visitArrowFunctionExpression = function(fx) {
+        for (var i = 0; i < fx.params.length; i++) {
+            var param = fx.params[i];
+            param.parent = fx;
+            this.visit(param);
+        }
+        if (fx.body !== null) {
+            fx.body.parent = fx;
+            this.visit(fx.body);
+        }
+    };
+    
+    this.visitAwaitExpression = function(expr) {
+        if (expr.argument !== null) {
+            expr.argument.parent = expr;
+            this.visit(expr.argument);
         }
     }
 }
