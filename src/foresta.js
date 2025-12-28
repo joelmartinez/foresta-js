@@ -192,9 +192,12 @@ function foresta(query) {
         // Parse attribute selector: [property operator value]
         // Operators: =, ^=, $=, *=, ~= (regex)
         var match;
+        var PROPERTY_PATTERN = '([a-zA-Z._]+)'; // Matches property names including dot notation
         
         // Regex pattern: [property~/pattern/]
-        if ((match = attrStr.match(/^([a-zA-Z._]+)~\/(.+)\/$/))) {
+        // Note: User-provided regex patterns are executed as-is. In a production environment,
+        // consider adding validation or timeout mechanisms to prevent ReDoS attacks.
+        if ((match = attrStr.match(new RegExp('^' + PROPERTY_PATTERN + '~\\/(.+)\\/$')))) {
             return {
                 property: match[1],
                 operator: '~=',
@@ -203,7 +206,7 @@ function foresta(query) {
         }
         
         // Starts with: [property^="value"]
-        if ((match = attrStr.match(/^([a-zA-Z._]+)\^=["']?([^"']*)["']?$/))) {
+        if ((match = attrStr.match(new RegExp('^' + PROPERTY_PATTERN + '\\^=["\']{0,1}([^"\']*)["\']{0,1}$')))) {
             return {
                 property: match[1],
                 operator: '^=',
@@ -212,7 +215,7 @@ function foresta(query) {
         }
         
         // Ends with: [property$="value"]
-        if ((match = attrStr.match(/^([a-zA-Z._]+)\$=["']?([^"']*)["']?$/))) {
+        if ((match = attrStr.match(new RegExp('^' + PROPERTY_PATTERN + '\\$=["\']{0,1}([^"\']*)["\']{0,1}$')))) {
             return {
                 property: match[1],
                 operator: '$=',
@@ -221,7 +224,7 @@ function foresta(query) {
         }
         
         // Contains: [property*="value"]
-        if ((match = attrStr.match(/^([a-zA-Z._]+)\*=["']?([^"']*)["']?$/))) {
+        if ((match = attrStr.match(new RegExp('^' + PROPERTY_PATTERN + '\\*=["\']{0,1}([^"\']*)["\']{0,1}$')))) {
             return {
                 property: match[1],
                 operator: '*=',
@@ -230,7 +233,7 @@ function foresta(query) {
         }
         
         // Exact match: [property=value] or [property="value"]
-        if ((match = attrStr.match(/^([a-zA-Z._]+)=(.+)$/))) {
+        if ((match = attrStr.match(new RegExp('^' + PROPERTY_PATTERN + '=(.+)$')))) {
             var value = match[2];
             // Remove quotes if present
             if ((value.startsWith('"') && value.endsWith('"')) ||
@@ -605,8 +608,13 @@ function foresta(query) {
                 
                 switch (prevCombinator) {
                     case ' ':
-                        // Space in legacy mode: consecutive parent (not descendant!)
-                        // For backward compatibility with original implementation
+                        // IMPORTANT: Space combinator behavior differs from CSS!
+                        // In CSS: space means "descendant at any level"
+                        // In Foresta: space means "consecutive parent chain"
+                        // Example: "Program VariableDeclaration VariableDeclarator" requires:
+                        //   - VariableDeclarator whose parent is VariableDeclaration
+                        //   - whose parent is Program
+                        // This matches the original Foresta.js behavior for backward compatibility
                         currentExpression = currentExpression.parent;
                         break;
                     case '>':

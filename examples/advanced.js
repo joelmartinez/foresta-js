@@ -1,4 +1,4 @@
-const foresta = require('../dist/foresta');
+const foresta = require('../src/foresta');
 const esprima = require('esprima');
 
 console.log('=== Advanced Foresta.js Selector Examples ===\n');
