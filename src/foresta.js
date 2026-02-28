@@ -866,6 +866,38 @@ function foresta(query) {
     }
 }
 
+// Static helper methods to abstract esprima dependency
+foresta.parse = function(code, options) {
+    // Try to require esprima if available
+    var esprima;
+    if (typeof require !== 'undefined') {
+        try {
+            esprima = require('esprima');
+        } catch (e) {
+            throw new Error('esprima is required for parsing. Install it with: npm install esprima');
+        }
+    } else if (typeof window !== 'undefined' && window.esprima) {
+        esprima = window.esprima;
+    } else {
+        throw new Error('esprima is not available. Please include it in your project.');
+    }
+    
+    // Parse the code
+    var parseMethod = (options && options.sourceType === 'module') ? 'parseModule' : 'parseScript';
+    return esprima[parseMethod](code, options);
+};
+
+foresta.query = function(code, selector, options) {
+    // Parse the code
+    var ast = foresta.parse(code, options);
+    
+    // Create query and execute
+    var query = new foresta(selector);
+    query.visit(ast);
+    
+    return query.results;
+};
+
 // Export for CommonJS
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = foresta;

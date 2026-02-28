@@ -1,5 +1,6 @@
-const foresta = require('../dist/foresta');
-const esprima = require('esprima');
+const foresta = require('../src/foresta');
+
+console.log('=== Foresta.js Examples ===\n');
 
 // Example code to analyze
 const code = `
@@ -13,31 +14,25 @@ var config = {
 };
 `;
 
-console.log('=== Foresta.js Examples ===\n');
-
-// Parse the code with esprima
-const ast = esprima.parseScript(code);
-
-// Example 1: Find all literal values
+// Example 1: Find all literal values using the new query API
 console.log('1. All literal values:');
-const literalQuery = new foresta("Literal");
-literalQuery.visit(ast);
-literalQuery.results.forEach((result, i) => {
+const literals = foresta.query(code, "Literal");
+literals.forEach((result, i) => {
   console.log(`   ${i + 1}. ${JSON.stringify(result.value)} (${typeof result.value})`);
 });
 
 // Example 2: Find specific variable by name
 console.log('\n2. Variable named "theValue":');
-const identifierQuery = new foresta("#theValue");
-identifierQuery.visit(ast);
-if (identifierQuery.results.length > 0) {
-  const result = identifierQuery.results[0];
+const theValue = foresta.query(code, "#theValue");
+if (theValue.length > 0) {
+  const result = theValue[0];
   console.log(`   Found: ${result.name}`);
   console.log(`   Initialization: ${result.parent.init.type} (${result.parent.init.operator})`);
 }
 
-// Example 3: Find all global variables
+// Example 3: Find all global variables (using traditional API)
 console.log('\n3. All global variable declarations:');
+const ast = foresta.parse(code);
 const globalVarsQuery = new foresta("Program VariableDeclaration VariableDeclarator");
 globalVarsQuery.visit(ast);
 globalVarsQuery.results.forEach((result, i) => {
@@ -55,9 +50,8 @@ if (functionQuery.results.length > 0) {
 
 // Example 5: Find all binary expressions
 console.log('\n5. All binary expressions:');
-const binaryQuery = new foresta("BinaryExpression");
-binaryQuery.visit(ast);
-binaryQuery.results.forEach((result, i) => {
+const binaryExpressions = foresta.query(code, "BinaryExpression");
+binaryExpressions.forEach((result, i) => {
   console.log(`   ${i + 1}. ${result.left.value || result.left.name} ${result.operator} ${result.right.value || result.right.name}`);
 });
 
